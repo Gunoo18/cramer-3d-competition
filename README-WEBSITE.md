@@ -1,15 +1,15 @@
 # Cramer 3D Competition Website
 
-이 폴더는 그대로 웹사이트로 배포할 수 있는 Node 기반 웹앱입니다.
+크래머 공식과 평면 방정식을 이용해 3D 입체를 만들고, 작품을 대회 갤러리에 제출하는 Node 기반 웹사이트입니다.
 
-## 포함 기능
+## 주요 기능
 
-- 크래머 공식과 평면 방정식 기반 3D 입체 생성
-- 1번 기본 모델, 2번 평면 수정 실험 모델
-- 크래머 공식 적용 과정 시각화
-- 구글 아이디와 참가자 이름으로 3D 사진 제출
-- 미적 점수 자동 계산 및 순위 갤러리
-- 제출 데이터 서버 저장
+- 평면 부등식으로 입체 조건 생성
+- 세 평면의 교점을 크래머 공식으로 계산
+- 기본 모델과 평면 수정 실험 모델 시각화
+- 학번, 이름, 작품명, 미적 의도를 입력해 작품 제출
+- 학번 기준 중복 제출 방지
+- Supabase 연결 시 온라인 영구 데이터베이스 저장
 
 ## 로컬 실행
 
@@ -23,35 +23,51 @@ npm start
 http://localhost:4174
 ```
 
-## 온라인 배포 방식
+## 온라인 배포
 
-정적 사이트만 올리는 방식으로는 대회 갤러리 서버 저장이 되지 않습니다.
-`server.mjs`를 실행할 수 있는 Node 서버형 배포가 필요합니다.
-
-## Render 배포
-
-이 폴더에는 `render.yaml`이 포함되어 있습니다.
-GitHub 저장소에 올린 뒤 Render에서 Blueprint로 연결하면 Node 웹서비스로 배포할 수 있습니다.
-
-Render 설정 핵심값:
+Render 같은 Node 서버 배포 환경에서 실행할 수 있습니다.
 
 ```text
-Runtime: Node
 Build command: npm install
 Start command: npm start
-Environment variable: DATA_DIR=/var/data
-Persistent disk: /var/data
 ```
 
-`server.mjs`는 `process.env.PORT`가 있으면 그 값을 사용하고, 없으면 `4174`를 사용합니다.
+무료 Render 웹 서비스는 서버 파일 저장이 영구 보존되지 않습니다. 제출 데이터를 계속 보존하려면 Supabase 같은 외부 데이터베이스를 연결해야 합니다.
 
-## 저장 데이터
+## Supabase 영구 DB 설정
 
-대회 제출 작품은 기본적으로 `submissions.json`에 저장됩니다.
-온라인 배포에서는 `DATA_DIR` 환경변수가 있으면 그 폴더 안의 `submissions.json`에 저장됩니다.
-서버가 파일을 유지하지 않는 환경이라면 데이터베이스나 Firebase 같은 저장소로 바꾸는 것이 좋습니다.
+Supabase SQL Editor에서 아래 SQL을 실행합니다.
 
-## 구글 로그인 관련
+```sql
+create table if not exists cramer_submissions (
+  id text primary key,
+  "displayName" text not null,
+  "studentId" text not null unique,
+  title text not null,
+  description text,
+  source text,
+  "sourceLabel" text,
+  model text,
+  image text not null,
+  "createdAt" timestamptz not null,
+  "aestheticScore" integer not null,
+  "scoreBreakdown" jsonb,
+  "vertexCount" integer,
+  "planeSummary" text
+);
+```
 
-현재 버전은 실제 Google OAuth 로그인이 아니라 사용자가 구글 아이디를 직접 입력하는 방식입니다.
-진짜 구글 로그인까지 붙이려면 Google OAuth 또는 Firebase Authentication 설정이 필요합니다.
+Render 환경 변수에 다음 값을 추가합니다.
+
+```text
+SUPABASE_URL=Supabase project URL
+SUPABASE_SERVICE_ROLE_KEY=Supabase service_role key
+```
+
+이 두 값이 설정되면 `/api/submissions`는 `submissions.json` 대신 Supabase의 `cramer_submissions` 테이블을 사용합니다.
+
+## 저장 방식
+
+- Supabase 환경 변수가 있으면 온라인 영구 DB에 저장됩니다.
+- Supabase 환경 변수가 없으면 서버의 `submissions.json`에 저장됩니다.
+- Render 무료 서버의 로컬 파일은 재시작 시 보존되지 않을 수 있으므로, 실제 온라인 대회 제출 기록은 Supabase 연결을 권장합니다.

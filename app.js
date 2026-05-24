@@ -38,7 +38,7 @@ const toggleAxesButton = document.querySelector("#toggleAxesButton");
 const pageScrollControl = document.querySelector("#pageScrollControl");
 const pageScrollThumb = document.querySelector("#pageScrollThumb");
 const competitionName = document.querySelector("#competitionName");
-const competitionGoogleId = document.querySelector("#competitionGoogleId");
+const competitionStudentId = document.querySelector("#competitionStudentId") || document.querySelector("#competitionGoogleId");
 const competitionTitle = document.querySelector("#competitionTitle");
 const competitionDescription = document.querySelector("#competitionDescription");
 const competitionScene = document.querySelector("#competitionScene");
@@ -1801,7 +1801,12 @@ function setCompetitionStatus(message, type = "") {
 function setCompetitionMode(mode) {
   state.competitionMode = mode;
   if (!competitionMode) return;
-  competitionMode.textContent = mode === "server" ? "서버 저장" : "브라우저 저장";
+  const labels = {
+    database: "영구 DB 저장",
+    server: "서버 저장",
+    local: "브라우저 저장",
+  };
+  competitionMode.textContent = labels[mode] || labels.local;
 }
 
 function readLocalCompetitionEntries() {
@@ -1818,10 +1823,17 @@ function writeLocalCompetitionEntries(entries) {
   localStorage.setItem(COMPETITION_STORAGE_KEY, JSON.stringify(entries.slice(0, 36)));
 }
 
+function hasLocalStudentSubmission(studentId, entries = readLocalCompetitionEntries()) {
+  const target = String(studentId || "").replace(/\s+/g, "").toLowerCase();
+  if (!target) return false;
+  return entries.some((entry) => String(entry.studentId || entry.googleId || "").replace(/\s+/g, "").toLowerCase() === target);
+}
+
 async function fetchServerCompetitionEntries() {
   const response = await fetch("/api/submissions", { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error("server unavailable");
   const data = await response.json();
+  if (data.mode) setCompetitionMode(data.mode === "supabase" ? "database" : "server");
   return Array.isArray(data) ? data : data.entries || [];
 }
 
@@ -1831,8 +1843,18 @@ async function postServerCompetitionEntry(entry) {
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(entry),
   });
-  if (!response.ok) throw new Error("server unavailable");
+  if (!response.ok) {
+    let message = "server unavailable";
+    try {
+      const data = await response.json();
+      message = data.error || message;
+    } catch {}
+    const error = new Error(message);
+    error.serverResponse = true;
+    throw error;
+  }
   const data = await response.json();
+  if (data.mode) setCompetitionMode(data.mode === "supabase" ? "database" : "server");
   return Array.isArray(data) ? data : data.entries || [];
 }
 
@@ -1894,9 +1916,11 @@ function calculateAestheticScore(source, description) {
 
 function normalizeCompetitionEntry(entry) {
   const score = Number.isFinite(Number(entry.aestheticScore)) ? Number(entry.aestheticScore) : 0;
-  const fallbackName = entry.googleId ? String(entry.googleId).split("@")[0] : "익명";
+  const studentId = entry.studentId || entry.googleId || "";
+  const fallbackName = studentId ? String(studentId) : "익명";
   return {
     ...entry,
+    studentId,
     displayName: entry.displayName || fallbackName,
     aestheticScore: score,
     scoreBreakdown: entry.scoreBreakdown || {
@@ -1911,18 +1935,18 @@ function normalizeCompetitionEntry(entry) {
 
 function createCompetitionEntry() {
   const displayName = competitionName.value.trim();
-  const googleId = competitionGoogleId.value.trim();
+  const studentId = competitionStudentId.value.trim();
   const title = competitionTitle.value.trim() || `${models[modelSelect.value].label} 입체`;
   const description = competitionDescription.value.trim();
   const source = competitionScene.value;
-  if (!googleId) {
-    throw new Error("구글 아이디를 입력해 주세요.");
+  if (!studentId) {
+    throw new Error("학번을 입력해 주세요.");
   }
   if (!displayName) {
     throw new Error("참가자 이름을 입력해 주세요.");
   }
-  if (googleId.length > 80) {
-    throw new Error("구글 아이디가 너무 깁니다.");
+  if (studentId.length > 20) {
+    throw new Error("학번이 너무 깁니다.");
   }
 
   const applied = state.experimentApplied || [];
@@ -1930,7 +1954,7 @@ function createCompetitionEntry() {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     displayName: displayName.slice(0, 24),
-    googleId,
+    studentId,
     title: title.slice(0, 40),
     description: description.slice(0, 160),
     source,
@@ -1988,7 +2012,7 @@ function renderCompetitionGallery() {
           <img src="${escapeHtml(entry.image)}" alt="${escapeHtml(entry.title)}" />
           <div class="gallery-card-body">
             <strong>${escapeHtml(entry.displayName)}</strong>
-            <em>${escapeHtml(entry.title)} · ${escapeHtml(entry.googleId)}</em>
+            <em>${escapeHtml(entry.title)} · 학번 ${escapeHtml(entry.studentId || "-")}</em>
             <span>${escapeHtml(entry.sourceLabel || "3D 모델")} · 꼭짓점 ${escapeHtml(entry.vertexCount ?? "-")}개</span>
             <span>${escapeHtml(entry.model || "")} · ${escapeHtml(date)}</span>
             <span>${escapeHtml(entry.planeSummary || "")}</span>
@@ -2006,8 +2030,7 @@ async function loadCompetitionEntries() {
   try {
     const entries = await fetchServerCompetitionEntries();
     state.competitionEntries = entries;
-    setCompetitionMode("server");
-    setCompetitionStatus("서버 갤러리를 불러왔습니다.", "good");
+    setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 갤러리를 불러왔습니다." : "서버 갤러리를 불러왔습니다.", "good");
   } catch {
     state.competitionEntries = readLocalCompetitionEntries();
     setCompetitionMode("local");
@@ -2022,10 +2045,14 @@ async function saveCompetitionEntry() {
     const entry = createCompetitionEntry();
     try {
       state.competitionEntries = await postServerCompetitionEntry(entry);
-      setCompetitionMode("server");
-      setCompetitionStatus("서버 대회 갤러리에 저장했습니다.", "good");
-    } catch {
-      const entries = [entry, ...readLocalCompetitionEntries()].slice(0, 36);
+      setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 대회 갤러리에 저장했습니다." : "서버 대회 갤러리에 저장했습니다.", "good");
+    } catch (serverError) {
+      if (serverError.serverResponse) throw serverError;
+      const currentEntries = readLocalCompetitionEntries();
+      if (hasLocalStudentSubmission(entry.studentId, currentEntries)) {
+        throw new Error("이미 이 학번으로 제출된 작품이 있습니다.");
+      }
+      const entries = [entry, ...currentEntries].slice(0, 36);
       writeLocalCompetitionEntries(entries);
       state.competitionEntries = entries;
       setCompetitionMode("local");
