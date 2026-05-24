@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cramer-3d-competition
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: cramer-gallery-data
+      mountPath: /var/data
+      sizeGB: 1

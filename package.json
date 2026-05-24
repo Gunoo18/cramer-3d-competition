@@ -1,0 +1,14 @@
+{
+  "name": "cramer-3d-competition",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cramer's rule 3D model generator with competition gallery",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

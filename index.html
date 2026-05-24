@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>크래머 공식 3D 입체 생성기</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <p class="eyebrow">Cramer's Rule 3D</p>
+        <h1>크래머 공식 입체 생성기</h1>
+      </header>
+
+      <section class="stage-section input-stage">
+        <div class="stage-heading">
+          <span class="stage-number">1</span>
+          <div>
+            <p class="stage-kicker">1번 입력</p>
+            <h2>기본 3D 모델 만들기</h2>
+          </div>
+        </div>
+
+        <div class="panel-section">
+          <label class="field">
+            <span>모형</span>
+            <select id="modelSelect"></select>
+          </label>
+          <div id="parameterGrid" class="parameter-grid"></div>
+          <p class="editor-note">수치를 바꾸면 1번 3D 모델과 평면 부등식이 자동으로 다시 계산됩니다.</p>
+        </div>
+      </section>
+
+      <section class="stage-section visual-stage">
+        <div class="stage-heading">
+          <span class="stage-number">2</span>
+          <div>
+            <p class="stage-kicker">1번 3D 사진</p>
+            <h2>좌표계 위의 기본 모델</h2>
+          </div>
+        </div>
+
+        <div class="model-window model-window-large">
+          <canvas id="sceneCanvas"></canvas>
+          <div class="window-label">1번 기본 모델</div>
+          <div class="viewer-toolbar">
+            <button id="toggleFacesButton" class="tool-button active" type="button">면</button>
+            <button id="toggleEdgesButton" class="tool-button active" type="button">선</button>
+            <button id="toggleAxesButton" class="tool-button active" type="button">축</button>
+            <button id="resetViewButton" class="tool-button" type="button" title="시점 초기화" aria-label="시점 초기화">↻</button>
+          </div>
+          <div id="modelBadge" class="model-badge"></div>
+          <div id="vertexList" class="vertex-list"></div>
+        </div>
+      </section>
+
+      <section class="stage-section analysis-stage">
+        <div class="stage-heading">
+          <span class="stage-number">3</span>
+          <div>
+            <p class="stage-kicker">해석</p>
+            <h2>평면 부등식과 크래머 공식</h2>
+          </div>
+        </div>
+
+        <div class="analysis-grid">
+          <section class="panel-section">
+            <div class="section-title-row">
+              <h3>평면 부등식</h3>
+              <button id="syncButton" class="small-button" type="button">다시 생성</button>
+            </div>
+            <textarea id="planesInput" spellcheck="false"></textarea>
+          </section>
+
+          <section class="panel-section compact">
+            <h3>계산 결과</h3>
+            <div id="statsGrid" class="stats-grid"></div>
+            <div id="cramerPanel" class="cramer-panel"></div>
+          </section>
+
+          <section class="panel-section compact explanation-card">
+            <h3>크래머 공식 해설</h3>
+            <div id="explanationPanel" class="explanation-panel"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="stage-section experiment-stage">
+        <div class="stage-heading">
+          <span class="stage-number">4</span>
+          <div>
+            <p class="stage-kicker">2번째 입력</p>
+            <h2>평면을 최대 2개만 바꾸어 보기</h2>
+          </div>
+        </div>
+
+        <div class="panel-section plane-editor-section">
+          <p class="editor-note">
+            2번 모델에서는 평면을 최대 두 개까지 바꿀 수 있습니다. 모양이 조금 이상해져도 괜찮습니다. 평면이 움직이면 꼭짓점 좌표가 다시 계산된다는 점을 보는 실험입니다.
+          </p>
+
+          <div class="experiment-slot">
+            <div class="slot-title-row">
+              <strong>변경 평면 1</strong>
+              <span>사용</span>
+            </div>
+            <label class="field">
+              <span>수정할 평면</span>
+              <select id="planeEditSelect"></select>
+            </label>
+            <div class="coefficient-grid">
+              <label class="field">
+                <span>a</span>
+                <input id="planeCoeffA" type="number" step="0.1" />
+              </label>
+              <label class="field">
+                <span>b</span>
+                <input id="planeCoeffB" type="number" step="0.1" />
+              </label>
+              <label class="field">
+                <span>c</span>
+                <input id="planeCoeffC" type="number" step="0.1" />
+              </label>
+              <label class="field">
+                <span>d</span>
+                <input id="planeCoeffD" type="number" step="0.1" />
+              </label>
+            </div>
+          </div>
+
+          <div class="experiment-slot">
+            <label class="slot-title-row check-row">
+              <strong>변경 평면 2</strong>
+              <input id="planeEdit2Enabled" type="checkbox" />
+            </label>
+            <label class="field">
+              <span>수정할 평면</span>
+              <select id="planeEdit2Select"></select>
+            </label>
+            <div class="coefficient-grid">
+              <label class="field">
+                <span>a</span>
+                <input id="planeCoeff2A" type="number" step="0.1" />
+              </label>
+              <label class="field">
+                <span>b</span>
+                <input id="planeCoeff2B" type="number" step="0.1" />
+              </label>
+              <label class="field">
+                <span>c</span>
+                <input id="planeCoeff2C" type="number" step="0.1" />
+              </label>
+              <label class="field">
+                <span>d</span>
+                <input id="planeCoeff2D" type="number" step="0.1" />
+              </label>
+            </div>
+          </div>
+
+          <div id="planePreview" class="plane-preview"></div>
+          <div class="button-row two-buttons">
+            <button id="applyPlaneButton" class="primary-button" type="button">2번 모델에 반영</button>
+            <button id="resetExperimentButton" class="icon-button" type="button" title="실험 초기화" aria-label="실험 초기화">↻</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="stage-section visual-stage">
+        <div class="stage-heading">
+          <span class="stage-number">5</span>
+          <div>
+            <p class="stage-kicker">2번 3D 사진</p>
+            <h2>평면을 바꾼 실험 모델</h2>
+          </div>
+        </div>
+
+        <div class="model-window model-window-large experiment-window">
+          <canvas id="experimentCanvas"></canvas>
+          <div class="window-label">2번 평면 실험 모델</div>
+          <div id="experimentBadge" class="model-badge experiment-badge"></div>
+        </div>
+      </section>
+
+      <section class="stage-section competition-stage">
+        <div class="stage-heading">
+          <span class="stage-number">6</span>
+          <div>
+            <p class="stage-kicker">온라인 대회 갤러리</p>
+            <h2>구글 아이디로 3D 사진 저장하기</h2>
+          </div>
+        </div>
+
+        <div class="competition-layout">
+          <section class="panel-section compact">
+            <h3>작품 제출</h3>
+            <label class="field">
+              <span>참가자 이름</span>
+              <input id="competitionName" type="text" placeholder="홍길동" maxlength="24" />
+            </label>
+            <label class="field">
+              <span>구글 아이디</span>
+              <input id="competitionGoogleId" type="email" placeholder="example@gmail.com" />
+            </label>
+            <label class="field">
+              <span>작품명</span>
+              <input id="competitionTitle" type="text" placeholder="내가 만든 입체" maxlength="40" />
+            </label>
+            <label class="field">
+              <span>미적 의도</span>
+              <textarea id="competitionDescription" class="compact-textarea" spellcheck="false" maxlength="160" placeholder="예: 대칭적인 구조와 지붕 모양이 안정적으로 보이게 만들었다."></textarea>
+            </label>
+            <label class="field">
+              <span>저장할 3D 사진</span>
+              <select id="competitionScene">
+                <option value="base">1번 기본 모델</option>
+                <option value="experiment">2번 실험 모델</option>
+              </select>
+            </label>
+            <div class="score-guide">
+              <strong>자동 심사 기준</strong>
+              <span>균형감, 구조미, 독창성, 표현력을 합쳐 미적 점수를 계산합니다.</span>
+            </div>
+            <div class="button-row two-buttons">
+              <button id="saveCompetitionButton" class="primary-button" type="button">대회 갤러리에 저장</button>
+              <button id="refreshCompetitionButton" class="icon-button" type="button" title="갤러리 새로고침" aria-label="갤러리 새로고침">↻</button>
+            </div>
+            <div id="competitionStatus" class="competition-status"></div>
+          </section>
+
+          <section class="panel-section compact gallery-section">
+            <div class="section-title-row">
+              <h3>미적 순위</h3>
+              <span id="competitionMode" class="step-badge">준비 중</span>
+            </div>
+            <div id="competitionGallery" class="competition-gallery"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="pageScrollControl" class="page-scroll-control" aria-label="페이지 스크롤 손잡이">
+      <div id="pageScrollThumb" class="page-scroll-thumb"></div>
+    </div>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
