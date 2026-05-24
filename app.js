@@ -1803,7 +1803,7 @@ function setCompetitionMode(mode) {
   if (!competitionMode) return;
   const labels = {
     database: "영구 DB 저장",
-    server: "서버 저장",
+    server: "임시 서버 저장",
     local: "브라우저 저장",
   };
   competitionMode.textContent = labels[mode] || labels.local;
@@ -2030,7 +2030,7 @@ async function loadCompetitionEntries() {
   try {
     const entries = await fetchServerCompetitionEntries();
     state.competitionEntries = entries;
-    setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 갤러리를 불러왔습니다." : "서버 갤러리를 불러왔습니다.", "good");
+    setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 갤러리를 불러왔습니다." : "임시 서버 갤러리를 불러왔습니다.", "good");
   } catch {
     state.competitionEntries = readLocalCompetitionEntries();
     setCompetitionMode("local");
@@ -2045,7 +2045,7 @@ async function saveCompetitionEntry() {
     const entry = createCompetitionEntry();
     try {
       state.competitionEntries = await postServerCompetitionEntry(entry);
-      setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 대회 갤러리에 저장했습니다." : "서버 대회 갤러리에 저장했습니다.", "good");
+      setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 대회 갤러리에 저장했습니다." : "임시 서버 대회 갤러리에 저장했습니다.", "good");
     } catch (serverError) {
       if (serverError.serverResponse) throw serverError;
       const currentEntries = readLocalCompetitionEntries();
