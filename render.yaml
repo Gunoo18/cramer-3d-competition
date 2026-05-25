@@ -5,3 +5,12 @@ services:
     plan: free
     buildCommand: npm install
     startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cramer-3d-competition-db
+          property: connectionString
+
+databases:
+  - name: cramer-3d-competition-db
+    plan: free
