@@ -49,6 +49,7 @@ const competitionMode = document.querySelector("#competitionMode");
 const competitionGallery = document.querySelector("#competitionGallery");
 
 const COMPETITION_STORAGE_KEY = "cramerCompetitionEntries";
+const COMPETITION_REFRESH_MS = 5000;
 
 const state = {
   solids: [],
@@ -84,6 +85,7 @@ const state = {
   planeEditorValue: null,
   competitionEntries: [],
   competitionMode: "local",
+  competitionRefreshTimer: null,
 };
 
 const colors = {
@@ -1802,11 +1804,18 @@ function setCompetitionMode(mode) {
   state.competitionMode = mode;
   if (!competitionMode) return;
   const labels = {
+    postgres: "온라인 DB 저장",
+    supabase: "온라인 DB 저장",
     database: "영구 DB 저장",
+    file: "임시 서버 저장",
     server: "임시 서버 저장",
     local: "브라우저 저장",
   };
   competitionMode.textContent = labels[mode] || labels.local;
+}
+
+function isPersistentCompetitionMode(mode = state.competitionMode) {
+  return mode === "postgres" || mode === "supabase" || mode === "database";
 }
 
 function readLocalCompetitionEntries() {
@@ -1833,7 +1842,7 @@ async function fetchServerCompetitionEntries() {
   const response = await fetch("/api/submissions", { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error("server unavailable");
   const data = await response.json();
-  if (data.mode) setCompetitionMode(data.mode === "supabase" ? "database" : "server");
+  if (data.mode) setCompetitionMode(data.mode);
   return Array.isArray(data) ? data : data.entries || [];
 }
 
@@ -1854,7 +1863,7 @@ async function postServerCompetitionEntry(entry) {
     throw error;
   }
   const data = await response.json();
-  if (data.mode) setCompetitionMode(data.mode === "supabase" ? "database" : "server");
+  if (data.mode) setCompetitionMode(data.mode);
   return Array.isArray(data) ? data : data.entries || [];
 }
 
@@ -2026,15 +2035,20 @@ function renderCompetitionGallery() {
   updatePageScrollControl();
 }
 
-async function loadCompetitionEntries() {
+async function loadCompetitionEntries(options = {}) {
   try {
     const entries = await fetchServerCompetitionEntries();
     state.competitionEntries = entries;
-    setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 갤러리를 불러왔습니다." : "임시 서버 갤러리를 불러왔습니다.", "good");
+    if (!options.silent) {
+      const message = isPersistentCompetitionMode()
+        ? "온라인 DB 갤러리를 불러왔습니다. 시상식 화면은 5초마다 자동 갱신됩니다."
+        : "임시 서버 갤러리를 불러왔습니다. DB 연결 전에는 기록이 사라질 수 있습니다.";
+      setCompetitionStatus(message, isPersistentCompetitionMode() ? "good" : "");
+    }
   } catch {
     state.competitionEntries = readLocalCompetitionEntries();
     setCompetitionMode("local");
-    setCompetitionStatus("현재는 이 브라우저에 저장됩니다.", "");
+    if (!options.silent) setCompetitionStatus("현재는 이 브라우저에 저장됩니다.", "");
   }
   renderCompetitionGallery();
 }
@@ -2045,7 +2059,7 @@ async function saveCompetitionEntry() {
     const entry = createCompetitionEntry();
     try {
       state.competitionEntries = await postServerCompetitionEntry(entry);
-      setCompetitionStatus(state.competitionMode === "database" ? "영구 DB 대회 갤러리에 저장했습니다." : "임시 서버 대회 갤러리에 저장했습니다.", "good");
+      setCompetitionStatus(isPersistentCompetitionMode() ? "온라인 DB 대회 갤러리에 저장했습니다." : "임시 서버 대회 갤러리에 저장했습니다.", "good");
     } catch (serverError) {
       if (serverError.serverResponse) throw serverError;
       const currentEntries = readLocalCompetitionEntries();
@@ -2062,6 +2076,14 @@ async function saveCompetitionEntry() {
   } catch (error) {
     setCompetitionStatus(error.message, "error");
   }
+}
+
+function startCompetitionAutoRefresh() {
+  if (!competitionGallery || state.competitionRefreshTimer) return;
+  state.competitionRefreshTimer = window.setInterval(() => {
+    if (document.hidden) return;
+    loadCompetitionEntries({ silent: true });
+  }, COMPETITION_REFRESH_MS);
 }
 
 function setupEvents() {
@@ -2348,6 +2370,7 @@ function init() {
   setupEvents();
   resizeCanvas();
   loadCompetitionEntries();
+  startCompetitionAutoRefresh();
   requestAnimationFrame(render);
 }
 
