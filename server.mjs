@@ -11,7 +11,14 @@ const maxBodyBytes = 8 * 1024 * 1024;
 
 const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-const hasSupabase = Boolean(supabaseUrl && supabaseServiceKey);
+const databaseUrl = process.env.DATABASE_URL || "";
+const hasPostgres = Boolean(databaseUrl);
+const hasSupabase = !hasPostgres && Boolean(supabaseUrl && supabaseServiceKey);
+const storageMode = hasPostgres ? "postgres" : hasSupabase ? "supabase" : "file";
+const isPersistentStorage = hasPostgres || hasSupabase;
+let postgresPool = null;
+let postgresPoolPromise = null;
+let postgresReadyPromise = null;
 
 const types = {
   ".html": "text/html; charset=utf-8",
@@ -44,6 +51,139 @@ async function writeFileSubmissions(entries) {
   await writeFile(submissionsPath, JSON.stringify(entries.slice(0, 100), null, 2), "utf8");
 }
 
+function getStorageMode() {
+  return storageMode;
+}
+
+async function getPostgresPool() {
+  if (!hasPostgres) return null;
+  if (postgresPool) return postgresPool;
+  if (!postgresPoolPromise) {
+    postgresPoolPromise = import("pg").then(({ default: pg }) => {
+      postgresPool = new pg.Pool({
+        connectionString: databaseUrl,
+        ssl: databaseUrl.includes("localhost") || databaseUrl.includes("127.0.0.1") ? false : { rejectUnauthorized: false },
+      });
+      return postgresPool;
+    });
+  }
+  return postgresPoolPromise;
+}
+
+async function ensurePostgresTable() {
+  const pool = await getPostgresPool();
+  if (!pool) return;
+  if (!postgresReadyPromise) {
+    postgresReadyPromise = pool.query(`
+      create table if not exists cramer_submissions (
+        id text primary key,
+        "displayName" text not null,
+        "studentId" text not null unique,
+        title text not null,
+        description text,
+        source text,
+        "sourceLabel" text,
+        model text,
+        image text not null,
+        "createdAt" timestamptz not null,
+        "aestheticScore" integer not null,
+        "scoreBreakdown" jsonb,
+        "vertexCount" integer,
+        "planeSummary" text
+      );
+    `);
+  }
+  await postgresReadyPromise;
+}
+
+function normalizePostgresSubmission(row) {
+  return {
+    id: row.id,
+    displayName: row.displayName,
+    studentId: row.studentId,
+    title: row.title,
+    description: row.description || "",
+    source: row.source || "",
+    sourceLabel: row.sourceLabel || "",
+    model: row.model || "",
+    image: row.image,
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
+    aestheticScore: row.aestheticScore,
+    scoreBreakdown: row.scoreBreakdown || {},
+    vertexCount: row.vertexCount || 0,
+    planeSummary: row.planeSummary || "",
+  };
+}
+
+async function readPostgresSubmissions() {
+  await ensurePostgresTable();
+  const pool = await getPostgresPool();
+  const result = await pool.query(`
+    select
+      id,
+      "displayName",
+      "studentId",
+      title,
+      description,
+      source,
+      "sourceLabel",
+      model,
+      image,
+      "createdAt",
+      "aestheticScore",
+      "scoreBreakdown",
+      "vertexCount",
+      "planeSummary"
+    from cramer_submissions
+    order by "aestheticScore" desc, "createdAt" desc
+    limit 100
+  `);
+  return result.rows.map(normalizePostgresSubmission);
+}
+
+async function appendPostgresSubmission(submission) {
+  await ensurePostgresTable();
+  const pool = await getPostgresPool();
+  await pool.query(
+    `
+      insert into cramer_submissions (
+        id,
+        "displayName",
+        "studentId",
+        title,
+        description,
+        source,
+        "sourceLabel",
+        model,
+        image,
+        "createdAt",
+        "aestheticScore",
+        "scoreBreakdown",
+        "vertexCount",
+        "planeSummary"
+      )
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::timestamptz, $11, $12::jsonb, $13, $14)
+    `,
+    [
+      submission.id,
+      submission.displayName,
+      submission.studentId,
+      submission.title,
+      submission.description,
+      submission.source,
+      submission.sourceLabel,
+      submission.model,
+      submission.image,
+      submission.createdAt,
+      submission.aestheticScore,
+      JSON.stringify(submission.scoreBreakdown || {}),
+      submission.vertexCount,
+      submission.planeSummary,
+    ],
+  );
+  return readPostgresSubmissions();
+}
+
 async function supabaseRequest(path, options = {}) {
   const response = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
     method: options.method || "GET",
@@ -65,12 +205,15 @@ async function supabaseRequest(path, options = {}) {
 }
 
 async function readSubmissions() {
+  if (hasPostgres) return readPostgresSubmissions();
   if (!hasSupabase) return readFileSubmissions();
 
   return supabaseRequest("cramer_submissions?select=*&order=aestheticScore.desc,createdAt.desc");
 }
 
 async function appendSubmission(submission) {
+  if (hasPostgres) return appendPostgresSubmission(submission);
+
   if (hasSupabase) {
     await supabaseRequest("cramer_submissions", {
       method: "POST",
@@ -159,8 +302,8 @@ createServer(async (request, response) => {
 
   if (url.pathname === "/api/storage-status") {
     sendJson(response, 200, {
-      mode: hasSupabase ? "supabase" : "file",
-      persistent: hasSupabase,
+      mode: getStorageMode(),
+      persistent: isPersistentStorage,
     });
     return;
   }
@@ -169,7 +312,7 @@ createServer(async (request, response) => {
     try {
       if (request.method === "GET") {
         const entries = await readSubmissions();
-        sendJson(response, 200, { entries, mode: hasSupabase ? "supabase" : "file" });
+        sendJson(response, 200, { entries, mode: getStorageMode(), persistent: isPersistentStorage });
         return;
       }
 
@@ -192,13 +335,17 @@ createServer(async (request, response) => {
         }
 
         const entries = await appendSubmission(submission);
-        sendJson(response, 201, { entries, mode: hasSupabase ? "supabase" : "file" });
+        sendJson(response, 201, { entries, mode: getStorageMode(), persistent: isPersistentStorage });
         return;
       }
 
       sendJson(response, 405, { error: "method not allowed" });
       return;
     } catch (error) {
+      if (error.code === "23505") {
+        sendJson(response, 409, { error: "이미 이 학번으로 제출된 작품이 있습니다." });
+        return;
+      }
       sendJson(response, 400, { error: error.message });
       return;
     }
@@ -217,5 +364,5 @@ createServer(async (request, response) => {
   createReadStream(filePath).pipe(response);
 }).listen(port, () => {
   console.log(`Cramer 3D app: http://localhost:${port}`);
-  console.log(hasSupabase ? "Storage mode: Supabase" : "Storage mode: local submissions.json");
+  console.log(`Storage mode: ${getStorageMode()}`);
 });
